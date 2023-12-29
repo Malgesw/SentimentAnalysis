@@ -46,6 +46,7 @@ from sklearn import metrics
 from sklearn.model_selection import KFold
 import glob
 import os
+import random
 
 
 def tag_words(file_path, list1, list2, tag, old_directory, new_directory):
@@ -54,13 +55,13 @@ def tag_words(file_path, list1, list2, tag, old_directory, new_directory):
 
     can_tag = True
 
-    for i in range(len(words)):
-        if words[i] in list1:
-            i = i + 1
-            while can_tag and i < len(words):
-                if words[i] not in list2:
-                    words[i] = tag + words[i]
-                    i = i+1
+    for j in range(len(words)):
+        if words[j] in list1:
+            j = j + 1
+            while can_tag and j < len(words):
+                if words[j] not in list2:
+                    words[j] = tag + words[j]
+                    j = j+1
                 else:
                     can_tag = False
 
@@ -72,14 +73,86 @@ def tag_words(file_path, list1, list2, tag, old_directory, new_directory):
     return new_file_path
 
 
+def read_files(file_paths):
+    reviews = []
+    for fp in file_paths:
+        with open(fp, 'r') as f:
+            reviews.append(f.read())
+    return reviews
+
+# SETTING UP THE DATA
+
 negation_words = {"won't", "wouldn't", "shouldn't", "couldn't", "not", "isn't", "aren't", "haven't",
                   "don't", "doesn't", "wasn't", "weren't", "didn't", "can't", "cannot", "mustn't"}
-punctuation_marks = {".", ";", "?", "!", "]", ")", "[", "(", "/", ",", ":"}
+punctuation_marks = {".", ";", "?", "!", "]", ")", "[", "(", "/", ",", ":", "..."}
 
 pos_dir_path = "C:/Users/nicco/Desktop/PyCharmProjects/AIProjects/SentimentAnalysis/dataset/mix20_rand700_tokens/tokens/pos"
 neg_dir_path = "C:/Users/nicco/Desktop/PyCharmProjects/AIProjects/SentimentAnalysis/dataset/mix20_rand700_tokens/tokens/neg"
 
-for file in os.listdir(neg_dir_path):
-    filePath = os.path.join(neg_dir_path, file)
-    tag_words(filePath, negation_words, punctuation_marks, 'NOT_', "dataset/mix20_rand700_tokens/tokens/neg", 'prova 2')
+files = os.listdir(pos_dir_path.replace("dataset/mix20_rand700_tokens/tokens/pos", "pos_tagged"))
 
+if not files:
+    for file in os.listdir(pos_dir_path):
+        f_path = os.path.join(pos_dir_path, file)
+        tag_words(f_path, negation_words, punctuation_marks, "NOT_", "dataset/mix20_rand700_tokens/tokens/pos",
+                  "pos_tagged")
+    pos_dir_path = pos_dir_path.replace("dataset/mix20_rand700_tokens/tokens/pos", "pos_tagged")
+else:
+    print("pos dataset already set up")
+
+files = os.listdir(neg_dir_path.replace("dataset/mix20_rand700_tokens/tokens/neg", "neg_tagged"))
+
+if not files:
+    for file in os.listdir(neg_dir_path):
+        f_path = os.path.join(neg_dir_path, file)
+        tag_words(f_path, negation_words, punctuation_marks, "NOT_", "dataset/mix20_rand700_tokens/tokens/neg",
+                  "neg_tagged")
+    neg_dir_path = neg_dir_path.replace("dataset/mix20_rand700_tokens/tokens/neg", "neg_tagged")
+else:
+    print("neg dataset already set up")
+
+# THREE FOLD CROSS VALIDATION
+
+pos_reviews = read_files(glob.glob(pos_dir_path.replace("dataset/mix20_rand700_tokens/tokens/pos", "pos_tagged")+"/*"))
+neg_reviews = read_files(glob.glob(neg_dir_path.replace("dataset/mix20_rand700_tokens/tokens/neg", "neg_tagged")+"/*"))
+
+folds = []
+labels = []  # 1 -> positive review | 0 -> negative review
+fold_1 = pos_reviews[:233]+neg_reviews[:233]
+labels.append([1]*233+[0]*233)
+folds.append(fold_1)
+fold_2 = pos_reviews[233:466]+neg_reviews[233:466]
+labels.append([1]*233+[0]*233)
+folds.append(fold_2)
+fold_3 = pos_reviews[466:700]+neg_reviews[466:700]
+labels.append([1]*234+[0]*234)
+folds.append(fold_3)
+
+fold_numbers = [1, 2, 3]
+remaining_numbers = [1, 2, 3]
+c = 0
+scores = []
+
+while c < 3:
+    k = random.choice(remaining_numbers)
+    remaining_numbers.remove(k)
+    test_fold = folds[k-1]
+    test_labels = labels[k-1]
+    train_fold = []
+    train_labels = []
+    for i in fold_numbers:
+        if i != k:
+            train_fold.extend(folds[i-1])
+            train_labels.extend(labels[i-1])
+    cv = CountVectorizer()
+    train_vectors = cv.fit_transform(train_fold)
+    test_vectors = cv.transform(test_fold)
+    clf = MultinomialNB()
+    clf.fit(train_vectors, train_labels)  # training phase
+    pred = clf.predict(test_vectors)
+    accuracy = metrics.accuracy_score(test_labels, pred)
+    scores.append(accuracy)
+    c = c + 1  # repeat and try with a different test fold
+
+result = round(sum(scores)/c, 3)*100
+print("accuracy = "+str(result)+"%")
